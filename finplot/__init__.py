@@ -70,6 +70,7 @@ y_pad = 0.03 # 3% padding at top and bottom of autozoom plots
 y_label_width = 65
 timestamp_format = '%Y-%m-%d %H:%M:%S.%f'
 display_timezone = tzlocal() # default to local
+truncate_timestamp = True
 winx,winy,winw,winh = 300,150,800,400
 win_recreate_delta = 30
 log_plot_offset = -2.2222222e-16 # I could file a bug report, probably in PyQt, but this is more fun
@@ -334,7 +335,7 @@ class PandasDataSource:
         def calc_sd(ser):
             ser = ser.iloc[:1000]
             absdiff = ser.diff().abs()
-            absdiff[absdiff<1e-30] = 1e30
+            absdiff[absdiff<1e-30] = np.float32(1e30)
             smallest_diff = absdiff.min()
             if smallest_diff > 1e29: # just 0s?
                 return 0
@@ -1177,13 +1178,14 @@ class FinPlotItem(pg.GraphicsObject):
 
     def repaint(self):
         self.dirty = True
-        self.paint(self.painter)
+        self.paint(None)
 
     def paint(self, p, *args):
         if self.datasrc.is_sparse:
             self.dirty = True
         self.update_dirty_picture(self.viewRect())
-        p.drawPicture(0, 0, self.picture)
+        if p is not None:
+            p.drawPicture(0, 0, self.picture)
 
     def update_dirty_picture(self, visibleRect):
         if self.dirty or \
@@ -2586,7 +2588,8 @@ def _start_visual_update(item):
         y = item.datasrc.y / item.ax.vb.yscale.scalef
         if item.ax.vb.yscale.scaletype == 'log':
             y = y + log_plot_offset
-        item.setData(item.datasrc.index, y)
+        x = item.datasrc.index if item.ax.vb.x_indexed else item.datasrc.x
+        item.setData(x, y)
 
 
 def _end_visual_update(item):
@@ -2889,6 +2892,8 @@ def _x2t(datasrc, x, ts2str):
             if not datasrc.timebased():
                 return '%g' % t, False
             s = ts2str(t)
+            if not truncate_timestamp:
+                return s,True
             if epoch_period >= 23*60*60: # daylight savings, leap seconds, etc
                 i = s.index(' ')
             elif epoch_period >= 59: # consider leap seconds
